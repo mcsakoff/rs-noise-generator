@@ -1,0 +1,19 @@
+= Noise generator
+:icons: font
+
+Generate a WAV file with noise of specified color.
+
+== Usage
+
+```
+Usage: noise-generator [OPTIONS] [COLOR]
+
+Arguments:
+[COLOR]  Noise color [possible values: white, pink, red, blue, violet, grey]
+
+Options:
+-o, --output <WAV_FILE>  Output file [default: noise.wav]
+-s, --seconds <SECONDS>  Audio file length in seconds [default: 10]
+-r, --rate <RATE>        Audio file sample rate [default: 44100]
+-f, --force              Overwrite if file already exists
+```

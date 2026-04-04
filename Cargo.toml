@@ -1,6 +1,19 @@
 [package]
 name = "noise-generator"
 version = "0.1.0"
+description = "Generate WAV file with noise of specified color"
+repository = "https://github.com/mcsakoff/rs-noise-generator"
+authors = ["Alexey McSakoff <mcsakoff@gmail.com>"]
 edition = "2024"
+publish = false
+license = "MIT"
 
 [dependencies]
+anyhow = "1.0"
+clap = { version = "4.6", features = ["derive"] }
+env_logger = "0.11"
+hound = "3.5"
+log = "0.4"
+rand = "0.10"
+realfft = "3.5"
+rustfft = "6.4"
