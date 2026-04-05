@@ -52,13 +52,15 @@ pub fn generate_noise(
 
     let freq_to_amplitude_fn: fn(usize) -> f64 = match color {
         NoiseColor::White => |_| 1.0,
-        NoiseColor::Pink => |frq| (1.0 / frq as f64).sqrt(),
-        NoiseColor::Brownian => |frq| (1.0 / (frq as f64).powi(2)).sqrt(),
+        NoiseColor::Pink => |frq| 1.0 / (frq as f64).sqrt(),
+        NoiseColor::Brownian => |frq| 1.0 / (frq as f64),
         NoiseColor::Blue => |frq| (frq as f64).sqrt(),
         NoiseColor::Violet => |frq| frq as f64,
         NoiseColor::Grey => |frq| {
             let f = frq as f64;
             // https://en.wikipedia.org/wiki/A-weighting
+            // The weighting function R(f) is applied to the amplitude spectrum (not the intensity spectrum)
+            // of the unweighted sound level.
             let r_a = |f: f64| {
                 ((12194.0f64).powi(2) * f.powi(4))
                     / ((f.powi(2) + 20.6f64.powi(2))
@@ -67,9 +69,8 @@ pub fn generate_noise(
                         )
                         * (f.powi(2) + (12194.0f64).powi(2)))
             };
-            let a_db = 20. * r_a(f).log10() + 2.0;
-
-            10.0f64.powf(-a_db / 20.) // inverse and back to amplitude
+            // Invert the gain curve (with some scale for better precision in IFFT)
+            0.1 / r_a(f)
         },
     };
 
