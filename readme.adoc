@@ -3,6 +3,8 @@
 
 Generate a WAV file with noise of specified color.
 
+It generates noise in small chunks and then overlaps them with a window function to avoid sharp transitions and artifacts like frequency and volume pulsations.
+
 == Usage
 
 ```

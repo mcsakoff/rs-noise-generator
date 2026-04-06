@@ -4,7 +4,7 @@ use log::{error, info, warn};
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use noise_generator::{generate_noise, NoiseColor};
+use noise_generator::{wav, NoiseColor, WindowFunction};
 
 #[derive(ValueEnum, Clone)]
 pub enum Color {
@@ -87,11 +87,16 @@ fn run(args: &Args) -> Result<()> {
         NoiseColor::White
     };
 
+    // Hann window function is the best to blend two chunks without sharp transitions.
+    // But for noise signals it causes volume pulsations due to summing chunks with different phases.
+    // A sine window gives much better results.
+    let window = WindowFunction::Sine;
+
     info!("Noise color: {color}");
     info!("Sample rate: {sample_rate}");
     info!("Seconds to generate: {seconds}");
     info!("Writing file: {}", filename.display());
-    let info = generate_noise(color, sample_rate, seconds, filename)?;
+    let info = wav::write_with_noise_color(color, sample_rate, seconds, filename, window)?;
     info.print();
     Ok(())
 }
