@@ -1,6 +1,6 @@
 [package]
 name = "noise-generator"
-version = "0.1.1"
+version = "0.1.2"
 description = "Generate WAV file with noise of specified color"
 repository = "https://github.com/mcsakoff/rs-noise-generator"
 authors = ["Alexey McSakoff <mcsakoff@gmail.com>"]

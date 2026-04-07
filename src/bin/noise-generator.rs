@@ -7,6 +7,14 @@ use std::process::ExitCode;
 use noise_generator::noise::ifft_olap::{IFFTOverlapWithWindow, WindowFunction};
 use noise_generator::wav::write_noise_to_wav_file;
 use noise_generator::{NoiseColor, NormalizationDBFS};
+use noise_generator::noise::ifft_phc::IFFTPhaseContinuation;
+use noise_generator::noise::NoiseGenerator;
+
+#[derive(ValueEnum, Clone)]
+pub enum Generator {
+    PHC,
+    OLAP,
+}
 
 #[derive(ValueEnum, Clone)]
 pub enum Color {
@@ -26,18 +34,29 @@ struct Args {
     #[arg(value_enum)]
     color: Option<Color>,
 
-    /// Output file
+    /// Noise generator [default: olap]
+    #[arg(short, long, value_enum)]
+    generator: Option<Generator>,
+
+    /// Audio file to write
     #[arg(short, long, value_name = "WAV_FILE", default_value = "noise.wav")]
     output: PathBuf,
 
-    /// Audio file length in seconds [default: 10]
+    /// Output duration in seconds [default: 10]
     #[arg(short, long)]
     seconds: Option<usize>,
 
-    /// Audio file sample rate [default: 44100]
+    /// Sample rate [default: 44100]
     #[arg(short, long)]
     rate: Option<usize>,
 
+    /// Normalize to RMS value in dBFS [default: -14.0]
+    #[arg(long)]
+    rms: Option<f64>,
+
+    /// Normalize to peak value in dBFS (e.g.: -1.0)
+    #[arg(long)]
+    peak: Option<f64>,
     /// Overwrite if file already exists
     #[arg(short, long)]
     force: bool,
@@ -89,24 +108,44 @@ fn run(args: &Args) -> Result<()> {
         NoiseColor::White
     };
 
-    let normalization = NormalizationDBFS::default();
+    let normalization = {
+        if let Some(db) = args.rms {
+            NormalizationDBFS::RMS(db)
+        } else if let Some(db) = args.peak {
+            NormalizationDBFS::Peak(db)
+        } else {
+            NormalizationDBFS::default()
+        }
+    };
 
-    // Hann window function is the best to blend two chunks without sharp transitions.
-    // But for noise signals it causes volume pulsations due to summing chunks with different phases.
-    // A sine window gives much better results.
+    // A sine window is preferred here: in this stochastic overlap-add setup it produces lower
+    // envelope modulation than Hann.
     let window = WindowFunction::Sine;
 
+    let generator: Box<dyn NoiseGenerator> = match &args.generator {
+        None | Some(Generator::OLAP) => {
+            Box::new(IFFTOverlapWithWindow {
+                color,
+                normalization,
+                window,
+            })
+        }
+        Some(Generator::PHC) => {
+            Box::new(IFFTPhaseContinuation {
+                color,
+                normalization,
+            })
+        }
+    };
+
+    info!("Noise generator: {}", generator.name());
     info!("Noise color: {color}");
     info!("Sample rate: {sample_rate}");
     info!("Seconds to generate: {seconds}");
+    info!("Normalization: {normalization}");
     info!("Writing file: {}", filename.display());
 
-    let generator = IFFTOverlapWithWindow {
-        color,
-        normalization,
-        window,
-    };
-    let info = write_noise_to_wav_file(&generator, sample_rate, seconds, filename)?;
+    let info = write_noise_to_wav_file(generator.as_ref(), sample_rate, seconds, filename)?;
     info.print();
     Ok(())
 }

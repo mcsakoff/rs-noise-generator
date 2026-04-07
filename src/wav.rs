@@ -5,7 +5,7 @@ use std::fs::File;
 use std::io::BufWriter;
 use std::path::Path;
 
-use crate::noise::NoizeGenerator;
+use crate::noise::NoiseGenerator;
 use crate::utils::amplitude_to_db;
 
 /// Store and display RMS and Peak values.
@@ -54,7 +54,7 @@ impl WavMeters {
 /// Can fail on noise generation or writing WAV file.
 ///
 pub fn write_noise_to_wav_file(
-    generator: &impl NoizeGenerator,
+    generator: &dyn NoiseGenerator,
     sample_rate: usize,
     seconds: usize,
     filename: &Path,

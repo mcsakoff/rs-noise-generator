@@ -67,7 +67,7 @@ impl Display for NoiseColor {
 
 
 /// Calculates the gain required to normalize the signal to a target level in dBFS.
-/// Can be used for Peak or RMS normalization.
+/// Represents normalization targets in dBFS for either peak or RMS matching.
 #[derive(Copy, Clone)]
 pub enum NormalizationDBFS {
     Peak(f64),
@@ -77,14 +77,22 @@ pub enum NormalizationDBFS {
 impl NormalizationDBFS {
     fn calculate_gain(&self, samples: &[f64]) -> f64 {
         match self {
-            NormalizationDBFS::Peak(target_db) => {
+            Self::Peak(target_db) => {
                 let peak: f64 = samples.iter().fold(0.0, |acc, val| acc.max(val.abs()));
-                db_to_amplitude(*target_db) / peak
+                if peak <= f64::EPSILON {
+                    1.0 // silent input; unity gain preserves silence
+                } else {
+                    db_to_amplitude(*target_db) / peak
+                }
             }
-            NormalizationDBFS::RMS(target_db) => {
+            Self::RMS(target_db) => {
                 let sqr_sum: f64 = samples.iter().fold(0.0, |acc, val| acc + val.powi(2));
                 let rms = (sqr_sum / samples.len() as f64).sqrt();
-                db_to_amplitude(*target_db) / rms
+                if rms <= f64::EPSILON {
+                    1.0 // silent input; unity gain preserves silence
+                } else {
+                    db_to_amplitude(*target_db) / rms
+                }
             }
         }
     }
@@ -96,6 +104,14 @@ impl Default for NormalizationDBFS {
     }
 }
 
+impl Display for NormalizationDBFS {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Peak(db) => write!(f, "Peak {db:.02} dBFS"),
+            Self::RMS(db) => write!(f, "RMS {db:.02} dBFS"),
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests {
