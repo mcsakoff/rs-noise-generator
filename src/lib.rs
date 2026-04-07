@@ -1,13 +1,19 @@
 #![allow(clippy::cast_precision_loss)]
 
-use crate::utils::db_to_amplitude;
-use std::f64::consts::{PI, TAU};
 use std::fmt::{Display, Formatter};
 
+use crate::utils::db_to_amplitude;
+
 pub mod wav;
+pub mod noise;
 
 mod utils;
 
+/// The signal normalization target in dBFS.
+pub const NORMALIZATION_RMS_DBFS: f64 = -14.0;
+
+
+/// Noise color.
 #[derive(Copy, Clone)]
 pub enum NoiseColor {
     White,
@@ -19,7 +25,8 @@ pub enum NoiseColor {
 }
 
 impl NoiseColor {
-    fn amplitude_fn(&self) -> fn(usize) -> f64 {
+    /// Returns a function that calculates the amplitude value for a given frequency.
+    fn amplitude_fn(self) -> fn(usize) -> f64 {
         match self {
             Self::White => |_| 1.0,
             Self::Pink => |frq| 1.0 / (frq as f64).sqrt(),
@@ -29,8 +36,7 @@ impl NoiseColor {
             Self::Grey => |frq| {
                 let f = frq as f64;
                 // https://en.wikipedia.org/wiki/A-weighting
-                // The weighting function R(f) is applied to the amplitude spectrum (not the intensity spectrum)
-                // of the unweighted sound level.
+                // The weighting function R(f) is applied to the amplitude spectrum of the unweighted sound level.
                 let r_a = |f: f64| {
                     ((12194.0f64).powi(2) * f.powi(4))
                         / ((f.powi(2) + 20.6f64.powi(2))
@@ -59,28 +65,6 @@ impl Display for NoiseColor {
     }
 }
 
-#[derive(Copy, Clone)]
-pub enum WindowFunction {
-    None,
-    Sine,
-    Hann,
-    Hamming,
-    Triangular,
-}
-
-impl WindowFunction {
-    fn get_fn(&self) -> fn(usize, usize) -> f64 {
-        match self {
-            Self::None => |_, _| 1.0,
-            Self::Sine => |n, samples| (PI * n as f64 / samples as f64).sin(),
-            Self::Hann => |n, samples| (1.0 - (TAU * n as f64 / samples as f64).cos()) / 2.0,
-            Self::Hamming => {
-                |n, samples| 0.53836 - 0.46164 * (TAU * n as f64 / samples as f64).cos()
-            }
-            Self::Triangular => |n, samples| 1.0 - (2.0 * n as f64 / samples as f64 - 1.0).abs(),
-        }
-    }
-}
 
 /// Calculates the gain required to normalize the signal to a target level in dBFS.
 /// Can be used for Peak or RMS normalization.
@@ -95,7 +79,7 @@ impl NormalizationDBFS {
         match self {
             NormalizationDBFS::Peak(target_db) => {
                 let peak: f64 = samples.iter().fold(0.0, |acc, val| acc.max(val.abs()));
-                (1.0 / peak) * db_to_amplitude(*target_db)
+                db_to_amplitude(*target_db) / peak
             }
             NormalizationDBFS::RMS(target_db) => {
                 let sqr_sum: f64 = samples.iter().fold(0.0, |acc, val| acc + val.powi(2));
@@ -106,12 +90,18 @@ impl NormalizationDBFS {
     }
 }
 
+impl Default for NormalizationDBFS {
+    fn default() -> Self {
+        Self::RMS(NORMALIZATION_RMS_DBFS)
+    }
+}
+
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::utils::{overlap_chunks, split_chunk};
-    use crate::wav::WavInfo;
-    use std::f64::consts::FRAC_1_SQRT_2;
+    use crate::wav::WavMeters;
+    use std::f64::consts::{FRAC_1_SQRT_2, TAU};
 
     struct Sine {
         frequency: usize,
@@ -140,14 +130,14 @@ mod tests {
         samples
     }
 
-    fn measure_meters(samples: &[f64]) -> WavInfo {
+    fn measure_meters(samples: &[f64]) -> WavMeters {
         let peak: f64 = samples.iter().fold(0.0, |acc, val| acc.max(val.abs()));
         let sqr_sum: f64 = samples.iter().fold(0.0, |acc, val| acc + val.powi(2));
         let rms = (sqr_sum / samples.len() as f64).sqrt();
-        WavInfo { peak, rms }
+        WavMeters { peak, rms }
     }
 
-    fn display_meters(m: &WavInfo) {
+    fn display_meters(m: &WavMeters) {
         println!("Peak: {} ({} dBFS)", m.peak, m.peak_db());
         println!("RMS: {} ({} dBFS)", m.rms, m.rms_db());
     }
@@ -199,55 +189,6 @@ mod tests {
             display_meters(&m);
             println!();
             assert!((m.rms - 10f64.powf(target_rms_db / 20.0)).abs() < 0.00001);
-        }
-    }
-
-    const CHUNK_LEN: usize = 44100;
-    const CHUNK_MID: usize = CHUNK_LEN / 2;
-
-    fn make_hann_chunk(size: usize) -> Vec<f64> {
-        let window_fn = WindowFunction::Hann.get_fn();
-        let mut chunk = vec![0.0f64; size];
-        for n in 0..size {
-            chunk[n] = window_fn(n, size);
-        }
-        chunk
-    }
-
-    #[test]
-    /// Test OLAP for chunks with Hann window function.
-    fn test_hamming_window_chunks_overlap() {
-        let chunk = make_hann_chunk(CHUNK_LEN);
-        let overlap = overlap_chunks(&chunk[CHUNK_MID..], &chunk[..CHUNK_MID]);
-        for n in overlap {
-            assert!(
-                n >= 0.999999999999999f64,
-                "Value {} is too small, must be >= 0.999999999999999",
-                n
-            );
-        }
-    }
-
-    #[test]
-    fn test_hamming_window_many_chunks_overlap() {
-        let (chunk0_0, chunk0_1) = split_chunk(make_hann_chunk(CHUNK_LEN));
-        assert_eq!(chunk0_0.len(), CHUNK_MID);
-        assert_eq!(chunk0_1.len(), CHUNK_MID);
-
-        let mut chunk_n_1: Vec<f64> = chunk0_1; // second half of chunk N
-        let mut chunk_m_0: Vec<f64>; // first half of chunk N+1
-        for _ in 0..2 {
-            let (c_0, c_1) = split_chunk(make_hann_chunk(CHUNK_LEN));
-            chunk_m_0 = c_0;
-            let buffer: Vec<f64> = overlap_chunks(&chunk_n_1, &chunk_m_0);
-            for n in buffer {
-                assert!(
-                    n >= 0.999999999999999f64,
-                    "Value {} is too small, must be >= 0.999999999999999",
-                    n
-                );
-            }
-            chunk_n_1 = c_1;
         }
     }
 }

@@ -4,7 +4,9 @@ use log::{error, info, warn};
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use noise_generator::{wav, NoiseColor, WindowFunction};
+use noise_generator::noise::ifft_olap::{IFFTOverlapWithWindow, WindowFunction};
+use noise_generator::wav::write_noise_to_wav_file;
+use noise_generator::{NoiseColor, NormalizationDBFS};
 
 #[derive(ValueEnum, Clone)]
 pub enum Color {
@@ -87,6 +89,8 @@ fn run(args: &Args) -> Result<()> {
         NoiseColor::White
     };
 
+    let normalization = NormalizationDBFS::default();
+
     // Hann window function is the best to blend two chunks without sharp transitions.
     // But for noise signals it causes volume pulsations due to summing chunks with different phases.
     // A sine window gives much better results.
@@ -96,7 +100,13 @@ fn run(args: &Args) -> Result<()> {
     info!("Sample rate: {sample_rate}");
     info!("Seconds to generate: {seconds}");
     info!("Writing file: {}", filename.display());
-    let info = wav::write_with_noise_color(color, sample_rate, seconds, filename, window)?;
+
+    let generator = IFFTOverlapWithWindow {
+        color,
+        normalization,
+        window,
+    };
+    let info = write_noise_to_wav_file(&generator, sample_rate, seconds, filename)?;
     info.print();
     Ok(())
 }
